@@ -27,7 +27,7 @@ bot_update :: proc(bot: ^Bot, player: ^Player, dt: f32) {
     } * dt
     if utils.vec2_dist(bot.position, player.ship.position) < 20 {
         player_handle_hit(player, bot.position, 3)
-        bot.dead = true
+        bot.dead = true 
     }
 }
 
