@@ -27,10 +27,10 @@ background_init :: proc(background: ^Background, width, height: i32) {
     }
 }
 
-background_render :: proc(background: Background, player: Player) {
+background_render :: proc(background: Background, ship: Ship) {
     max_dist := utils.norm_vec2([2]f32 {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())})
     for star in background.stars {
-        if utils.vec2_dist(star.position, player.ship.position) < max_dist {
+        if utils.vec2_dist(star.position, ship.position) < max_dist {
             rl.DrawCircleV(star.position, star.size, rl.Color {255, 255, 255, 100})
         }
     }

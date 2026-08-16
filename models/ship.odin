@@ -11,10 +11,6 @@ SHIP_COLOR :: rl.Color { 255, 255, 255, 255 }
 TRAIL_PARTICLE_COLOR :: rl.Color { 255, 255, 255, 100 }
 MAX_RANGE :: 100
 
-Player :: struct {
-    ship: Ship
-}
-
 Ship :: struct {
     position, speed, laser_target: [2]f32,
     vertices: [3][2]f32,
@@ -36,8 +32,7 @@ TrailParticle :: struct {
     lifetime: int
 }
 
-player_update :: proc(player: ^Player, meteors: [dynamic]Meteor, camera: rl.Camera2D, dt: f32) {
-    ship := &player.ship
+ship_update :: proc(ship: ^Ship, meteors: []Meteor, camera: rl.Camera2D, dt: f32) {
     acc: f32 = 200
 
     if rl.IsKeyDown(.W) {
@@ -72,24 +67,23 @@ player_update :: proc(player: ^Player, meteors: [dynamic]Meteor, camera: rl.Came
     }
 }
 
-player_render :: proc(player: Player) {
-    ship := player.ship
+ship_render :: proc(ship: Ship) {
     thickness: f32 = 2
     rl.DrawLineEx(ship.vertices[0], ship.vertices[1], thickness, SHIP_COLOR)
     rl.DrawLineEx(ship.vertices[1], ship.vertices[2], thickness, SHIP_COLOR)
     rl.DrawLineEx(ship.vertices[2], ship.vertices[0], thickness, SHIP_COLOR)
     trail_render(ship.trail)
-    if (player.ship.laser_on) {
+    if (ship.laser_on) {
         rl.DrawLineEx(
-            player.ship.vertices[2],
-            player.ship.laser_target,
+            ship.vertices[2],
+            ship.laser_target,
             1,
             SHIP_COLOR
         )
     }
 }
 
-player_handle_hit :: proc(player: ^Player, position: [2]f32, damage: f32) {
+ship_handle_hit :: proc(ship: ^Ship, position: [2]f32, damage: f32) {
     
 }
 
@@ -156,7 +150,7 @@ trail_particle_spawn :: proc(ship: ^Ship) {
     }
 }
 
-laser_hit_meteor :: proc(ship: ^Ship, meteors: [dynamic]Meteor, dt: f32) {
+laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, dt: f32) {
     for &meteor in meteors {
         if utils.vec2_dist(ship.laser_target, meteor.position) < METEOR_MINIMUM_SIZE * 4 {
             for i in 0..<VERTEX_PER_METEOR {
