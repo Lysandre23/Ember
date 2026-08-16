@@ -33,13 +33,14 @@ game_init :: proc(game: ^Game) {
             enums.Materials.Osmium = 0,
         }
     }
-    level_create(&game.level, game.width, game.height)
+    level_create(&game.level)
     background_init(&game.background, game.width, game.height)
     hud_init(&game.hud, rl.GetScreenWidth(), rl.GetScreenHeight())
     rl.SetTargetFPS(180)
 }
 
 game_run :: proc(game: ^Game) {
+    rl.SetMouseCursor(.CROSSHAIR)
     for !rl.WindowShouldClose() {
         rl.BeginDrawing()
         rl.ClearBackground(rl.BLACK)
@@ -73,5 +74,4 @@ game_render_menu :: proc(game: Game) {
 game_render_run :: proc(game: ^Game) {
     background_render(game.background, game.level.ship)
     level_render(&game.level)
-    ship_render(game.level.ship)
 }

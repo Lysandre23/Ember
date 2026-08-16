@@ -48,6 +48,18 @@ ship_update :: proc(ship: ^Ship, meteors: []Meteor, camera: rl.Camera2D, dt: f32
     ship.direction = math.atan2_f32(mouse_vector.y, mouse_vector.x)
     ship.speed = utils.vec2_clamp_length(ship.speed, SHIP_MAX_SPEED)
     ship.position += ship.speed * dt
+    if ship.position.x < 0 {
+        ship.position.x = 0
+    }
+    if ship.position.x > LEVEL_WIDTH {
+        ship.position.x = LEVEL_WIDTH
+    }
+    if ship.position.y < 0 {
+        ship.position.y = 0
+    }
+    if ship.position.y > LEVEL_HEIGHT {
+        ship.position.y = LEVEL_HEIGHT
+    }
     ship.vertices = ship_get_vertices(ship^)
     trail_update(&ship.trail, dt)
 
@@ -84,7 +96,14 @@ ship_render :: proc(ship: Ship) {
 }
 
 ship_handle_hit :: proc(ship: ^Ship, position: [2]f32, damage: f32) {
-    
+    ship_take_damage(ship, 5)
+}
+
+ship_take_damage :: proc(ship: ^Ship, damage: f32) {
+    ship.integrity -= damage
+    if ship.integrity < 0 {
+        ship.integrity = 0
+    }
 }
 
 ship_get_vertices :: proc(ship: Ship) -> [3][2]f32 {

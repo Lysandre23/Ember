@@ -3,7 +3,6 @@ package models
 import "core:fmt"
 import rl "vendor:raylib"
 import "../enums"
-import "core:strconv"
 import "../utils"
 
 Hud :: struct {
@@ -22,31 +21,36 @@ hud_init :: proc(hud: ^Hud, width, height: i32) {
 hud_render :: proc(hud: Hud, level: Level) {
     hud_render_player_capacity(hud, level.ship)
     hud_render_level_info(hud, level)
+    hud_render_map(hud, level)
+}
+
+hud_render_map :: proc(hud: Hud, level: Level) {
+    if level.display_map {
+        level_render_map(level)
+    }
 }
 
 hud_render_level_info :: proc(hud: Hud, level: Level) {
-    rl.DrawTextEx(
-        hud.font, 
-        fmt.ctprintf("Position (%.0f;%.0f)", level.ship.position.x, level.ship.position.y),
-        [2]f32 {5, 5},
-        20, 3, rl.RAYWHITE
-    )
     player_speed := utils.norm_vec2(level.ship.speed)
-    one_leading_zero := player_speed < 100
-    two_leading_zero := player_speed < 10
-    rl.DrawTextEx(
-        hud.font, 
-        fmt.ctprintf("Speed %s%s%.0fpx/s", one_leading_zero ? "0" : "", two_leading_zero ? "0" : "", utils.norm_vec2(level.ship.speed)),
-        [2]f32 {5, 25},
-        20, 3, rl.RAYWHITE
-    )
-    one_leading_zero = level.last_player_chunk < 10
-    rl.DrawTextEx(
-        hud.font,
-        fmt.ctprintf("Sector %s%d", one_leading_zero ? "0" : "", level.last_player_chunk),
-        [2]f32 {5, 45},
-        20, 3, rl.RAYWHITE
-    )
+    intergrity_ratio := level.ship.integrity / level.ship.max_integrity * 100
+    info_to_render := [4]cstring {
+        fmt.ctprintf("Position (%.0f;%.0f)", level.ship.position.x, level.ship.position.y),
+        fmt.ctprintf("Speed %.0fpx/s", utils.norm_vec2(level.ship.speed)),
+        fmt.ctprintf("Sector %d", level.last_player_chunk),
+        fmt.ctprintf("Integrity %.0f%%", intergrity_ratio),
+    }
+    color := rl.RAYWHITE
+    x_padding: f32 = 5
+    y_padding: f32 = 5
+    for info in info_to_render {
+        rl.DrawTextEx(
+            hud.font, 
+            info,
+            [2]f32 {x_padding, y_padding},
+            20, 3, color
+        )
+        y_padding += 20
+    }
 }
 
 hud_render_player_capacity :: proc(hud: Hud, ship: Ship) {
