@@ -16,17 +16,13 @@ Player :: struct {
 }
 
 Ship :: struct {
-    position: [2]f32,
-    speed: [2]f32,
-    direction: f32,
+    position, speed, laser_target: [2]f32,
     vertices: [3][2]f32,
     trail: Trail,
     laser_on: bool,
-    laser_target: [2]f32,
     laser_color_variation: u8,
-    laser_power: f32,
-    max_capacity: f32,
-    stocks: map[enums.Materials]f32
+    laser_power, max_capacity, direction, integrity, max_integrity: f32,
+    stocks: map[enums.Materials]f32,
 }
 
 Trail :: struct {
@@ -78,20 +74,23 @@ player_update :: proc(player: ^Player, meteors: [dynamic]Meteor, camera: rl.Came
 
 player_render :: proc(player: Player) {
     ship := player.ship
-    color := SHIP_COLOR
     thickness: f32 = 2
-    rl.DrawLineEx(ship.vertices[0], ship.vertices[1], thickness, color)
-    rl.DrawLineEx(ship.vertices[1], ship.vertices[2], thickness, color)
-    rl.DrawLineEx(ship.vertices[2], ship.vertices[0], thickness, color)
+    rl.DrawLineEx(ship.vertices[0], ship.vertices[1], thickness, SHIP_COLOR)
+    rl.DrawLineEx(ship.vertices[1], ship.vertices[2], thickness, SHIP_COLOR)
+    rl.DrawLineEx(ship.vertices[2], ship.vertices[0], thickness, SHIP_COLOR)
     trail_render(ship.trail)
     if (player.ship.laser_on) {
         rl.DrawLineEx(
-            player.ship.position,
+            player.ship.vertices[2],
             player.ship.laser_target,
             1,
             SHIP_COLOR
         )
     }
+}
+
+player_handle_hit :: proc(player: ^Player, position: [2]f32, damage: f32) {
+    
 }
 
 ship_get_vertices :: proc(ship: Ship) -> [3][2]f32 {
@@ -176,15 +175,19 @@ laser_hit_meteor :: proc(ship: ^Ship, meteors: [dynamic]Meteor, dt: f32) {
                     m3 := meteor.vertices[(i + 2) % VERTEX_PER_METEOR]
                     m4 := meteor.vertices[((i - 1) == -1 ? VERTEX_PER_METEOR - 1 : (i - 1)) % VERTEX_PER_METEOR]
                     if m1 > MIN_RADIUS {
+                        ship.stocks[meteor.material] += 0.005 * meteor.vertices[i] * dt
                         meteor.vertices[i] *= 0.995
                     }
                     if m2 > MIN_RADIUS {
+                        ship.stocks[meteor.material] += 0.005 * meteor.vertices[(i + 1) % VERTEX_PER_METEOR] * dt
                         meteor.vertices[(i + 1) % VERTEX_PER_METEOR] *= 0.995
                     }
                     if m3 > MIN_RADIUS {
+                        ship.stocks[meteor.material] += 0.001 * meteor.vertices[(i + 2) % VERTEX_PER_METEOR] * dt
                         meteor.vertices[(i + 2) % VERTEX_PER_METEOR] *= 0.999
                     }
                     if m4 > MIN_RADIUS {
+                        ship.stocks[meteor.material] += 0.001 * meteor.vertices[((i - 1) == -1 ? VERTEX_PER_METEOR - 1 : (i - 1)) % VERTEX_PER_METEOR] * dt
                         meteor.vertices[((i - 1) == -1 ? VERTEX_PER_METEOR - 1 : (i - 1)) % VERTEX_PER_METEOR] *= 0.999
                     }
                 }

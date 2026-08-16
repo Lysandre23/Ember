@@ -34,7 +34,7 @@ meteor_create :: proc(x, y: f32, material: enums.Materials) -> Meteor {
     return Meteor { 
         position = [2]f32 {x, y}, 
         vertices = vertices, 
-        rotation = (rand.float32() * 0.6 + 0.1) * (rand.float32() < 0.5 ? -1 : 1),
+        rotation = (rand.float32() * 0.6 + 0.1) * (i32(math.round(x + y)) % 2 == 0 ? -1 : 1),
         material = material
     }
 }

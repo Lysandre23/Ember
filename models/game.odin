@@ -1,3 +1,5 @@
+#+feature dynamic-literals
+
 package models
 
 import "core:fmt"
@@ -25,7 +27,20 @@ game_init :: proc(game: ^Game) {
     game.width = 10000
     game.height = 10000
     level_create(&game.level, game.width, game.height)
-    game.player = Player { ship = Ship { position = [2]f32{150, 150}, max_capacity = 100 } }
+    game.player = Player { 
+        ship = Ship { 
+            position = [2]f32{150, 150}, 
+            max_capacity = 100,
+            max_integrity = 100,
+            integrity = 100,
+            stocks = map[enums.Materials]f32 {
+                enums.Materials.Iron = 0,
+                enums.Materials.Silver = 0,
+                enums.Materials.Gold = 0,
+                enums.Materials.Osmium = 0,
+            }
+        } 
+    }
     background_init(&game.background, game.width, game.height)
     hud_init(&game.hud, rl.GetScreenWidth(), rl.GetScreenHeight())
     rl.SetTargetFPS(180)
@@ -49,7 +64,7 @@ game_run :: proc(game: ^Game) {
 }
 
 game_update :: proc(game: ^Game, dt: f32) {
-    level_update(&game.level, game.player, dt)
+    level_update(&game.level, &game.player, dt)
     player_update(&game.player, game.level.meteors, game.camera, dt)
 
     target := game.player.ship.position
@@ -65,7 +80,6 @@ game_render :: proc(game: Game) {
         game_render_run(game)
         rl.EndMode2D()
         hud_render(game.hud, game.player)
-        rl.DrawFPS(5, 5)
     }
 }
 

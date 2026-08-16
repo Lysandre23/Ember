@@ -1,6 +1,7 @@
 package models
 
 import "../enums"
+import "core:math"
 import "core:math/rand"
 import "../utils"
 import rl "vendor:raylib"
@@ -8,7 +9,8 @@ import rl "vendor:raylib"
 METEOR_IN_LEVEL :: 300
 
 Level :: struct {
-    meteors: [dynamic]Meteor
+    meteors: [dynamic]Meteor,
+    bots: [dynamic]Bot
 }
 
 // ----------------------------------------
@@ -36,16 +38,29 @@ level_create :: proc(level: ^Level, width, height: i32) {
             meteor_create(
                 x, y, 
                 materials_selector[rand.int_max(len(materials_selector))])
-            )
+        )
     }
+
+    append(&level.bots, Bot {
+        false,
+        enums.BotType.Kamikaze,
+        [2]f32 {50, 250},
+        0
+    })
 }
 
-level_update :: proc(level: ^Level, player: Player, dt: f32) {
+level_update :: proc(level: ^Level, player: ^Player, dt: f32) {
+    max_dist := utils.norm_vec2([2]f32 {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())})
     for &meteor in level.meteors {
-        max_dist := utils.norm_vec2([2]f32 {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())})
         if utils.vec2_dist(meteor.position, player.ship.position) < max_dist {
             meteor_update(&meteor, dt)
         }
+    }
+    #reverse for &bot, i in level.bots {
+        if bot.dead {
+            unordered_remove(&level.bots, i)
+        }
+        bot_update(&bot, player, dt)
     }
 }
 
@@ -54,6 +69,11 @@ level_render :: proc(level: Level, player: Player) {
     for meteor in level.meteors {
         if utils.vec2_dist(meteor.position, player.ship.position) < max_dist {
             meteor_render(meteor)
+        }
+    }
+    for bot in level.bots {
+        if utils.vec2_dist(bot.position, player.ship.position) < max_dist {
+            bot_render(bot, player)
         }
     }
 }
