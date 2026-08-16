@@ -37,6 +37,14 @@ Level :: struct {
 
 // --- UTILITAIRES DE CHUNKS ---
 
+is_chunk_active :: proc(level: ^Level, chunk_idx: int) -> bool {
+    neighbors := get_neighboring_chunks(level.last_player_chunk)
+    for i in 0..<neighbors.count {
+        if neighbors.indices[i] == chunk_idx do return true
+    }
+    return false
+}
+
 get_chunk_index :: proc(x, y: f32) -> int {
     col := int(math.floor(x / CHUNK_SIZE))
     row := int(math.floor(y / CHUNK_SIZE))
@@ -180,6 +188,10 @@ level_update :: proc(level: ^Level, dt: f32) {
         if new_chunk != old_chunk {
             remove_id_from_slice(&level.chunks[old_chunk].bots, id)
             append(&level.chunks[new_chunk].bots, id)
+
+            if !is_chunk_active(level, new_chunk) {
+                unordered_remove(&level.active_bots, i)
+            }
         }
     }
 
