@@ -24,6 +24,14 @@ vec2_dist :: proc(v1, v2: [2]f32) -> f32 {
     return math.sqrt(math.pow(v1.x - v2.x, 2) + math.pow(v1.y - v2.y, 2))
 }
 
+vec2_normalize :: proc(v: [2]f32) -> [2]f32 {
+    length := norm_vec2(v)
+    if length == 0 {
+        return v
+    }
+    return v / length
+}
+
 vec2_lerp :: proc(a, b: [2]f32, t: f32) -> [2]f32 {
     return a + (b - a) * t
 }

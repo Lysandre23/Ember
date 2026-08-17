@@ -7,6 +7,7 @@ import rl "vendor:raylib"
 import "../enums"
 import "core:math"
 import "../utils"
+import "core:math/rand"
 
 Game :: struct {
     state: enums.GameState,
@@ -17,12 +18,13 @@ Game :: struct {
 }
 
 game_init :: proc(game: ^Game) {
+    rl.SetConfigFlags(rl.ConfigFlags { .MSAA_4X_HINT })
     rl.InitWindow(rl.GetScreenWidth(), rl.GetScreenHeight(), "Ember")
     game.state = enums.GameState.Run
     game.width = 10000
     game.height = 10000
     game.level.ship = Ship { 
-        position = [2]f32{150, 150}, 
+        position = [2]f32{LEVEL_WIDTH * (rand.float32() * 0.8 + 0.2), LEVEL_HEIGHT * (rand.float32() * 0.8 + 0.2)}, 
         max_capacity = 100,
         max_integrity = 100,
         integrity = 100,

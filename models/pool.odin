@@ -18,5 +18,10 @@ pool_add :: proc(pool: ^Pool($T), data: T) -> int {
 }
 
 pool_remove :: proc(pool: ^Pool($T), id: int) {
+    // Zeroed rather than left stale: a caller that owns heap data on T (like
+    // Meteor.vertices) is expected to free it before calling pool_remove, and
+    // zeroing here means an accidental read of a freed slot sees an empty/nil
+    // value instead of a dangling pointer.
+    pool.items[id] = {}
     append(&pool.free_indices, id)
 }

@@ -29,6 +29,7 @@ Level :: struct {
     active_meteors    : [dynamic]int,
     active_bots       : [dynamic]int,
     pois              : [dynamic]Poi,
+    particles         : [dynamic]Particle,
     pause             : bool,
     display_map       : bool,
 }
@@ -88,7 +89,30 @@ level_update :: proc(level: ^Level, dt: f32) {
         return
     }
 
-    ship_update(&level.ship, level.meteors.items[:], level.camera, dt)
+    new_meteors: [dynamic]Meteor
+    destroyed_meteor_ids: [dynamic]int
+    defer delete(new_meteors)
+    defer delete(destroyed_meteor_ids)
+
+    ship_update(&level.ship, level.meteors.items[:], level.active_meteors[:], &new_meteors, &destroyed_meteor_ids, &level.particles, level.camera, dt)
+    particle_update(&level.particles, dt)
+
+    for id in destroyed_meteor_ids {
+        old_chunk := get_chunk_index(level.meteors.items[id].position.x, level.meteors.items[id].position.y)
+        delete(level.meteors.items[id].vertices)
+        remove_id_from_slice(&level.chunks[old_chunk].meteors, id)
+        remove_id_from_slice(&level.active_meteors, id)
+        pool_remove(&level.meteors, id)
+    }
+
+    for fragment in new_meteors {
+        id := pool_add(&level.meteors, fragment)
+        chunk_idx := get_chunk_index(fragment.position.x, fragment.position.y)
+        append(&level.chunks[chunk_idx].meteors, id)
+        if is_chunk_active(level, chunk_idx) {
+            append(&level.active_meteors, id)
+        }
+    }
 
     for &poi in level.pois {
         poi_update(&poi, &level.ship, dt)
@@ -150,6 +174,7 @@ level_render :: proc(level: ^Level) {
         bot := level.bots.items[id]
         bot_render(bot, level.ship)
     }
+    particle_render(level.particles)
 }
 
 level_spawn_bot :: proc(level: ^Level, position: [2]f32, type: enums.BotType = enums.BotType.Kamikaze) {
