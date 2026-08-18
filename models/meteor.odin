@@ -43,7 +43,15 @@ Meteor :: struct {
     position: [2]f32, // centroid of alive cells: chunk placement & broad-phase
     spin: f32,
     velocity: [2]f32, // only ever nonzero right after a split — see meteor_apply_split_kick
-    material: enums.Materials
+    material: enums.Materials,
+
+    // Conservative avoidance/collision radius (models/bot.odin's steering,
+    // level.odin's level_meteor_impact broad-phase). Set once at creation
+    // and recomputed only when the meteor actually splits (meteor_check_split)
+    // — chipping individual cells without a split doesn't shrink it, since
+    // recomputing on every single hit would cost real per-frame work for a
+    // value that's only ever used as a rough safety margin.
+    avoid_radius: f32,
 }
 
 meteor_create :: proc(x, y: f32, material: enums.Materials) -> Meteor {
@@ -154,7 +162,27 @@ meteor_create :: proc(x, y: f32, material: enums.Materials) -> Meteor {
     }
     meteor_recompute_boundaries(&meteor)
     meteor.position = meteor_compute_centroid(meteor)
+    meteor.avoid_radius = meteor_compute_radius(meteor)
     return meteor
+}
+
+// Farthest any alive cell vertex sits from the meteor's own centroid — a
+// cheap circle bound used wherever an exact per-cell-edge test would be
+// overkill (bot steering, bullet blocking).
+meteor_compute_radius :: proc(meteor: Meteor) -> f32 {
+    max_dist: f32 = 0
+    for cell in meteor.cells {
+        if cell.dead {
+            continue
+        }
+        for v in cell.vertices {
+            d := utils.vec2_dist(v, meteor.position)
+            if d > max_dist {
+                max_dist = d
+            }
+        }
+    }
+    return max_dist
 }
 
 // An edge is drawn only if the cell across it isn't a still-alive neighbor —
@@ -342,6 +370,16 @@ meteor_hit :: proc(meteor: ^Meteor, from, to: [2]f32, damage_mult: f32, dt: f32)
     return
 }
 
+// A one-off impact (a ram, a fast pass-through) expressed directly in hp
+// rather than through meteor_hit's damage_mult/dt product — used by
+// anything that hits a meteor for a single instant instead of a sustained
+// beam (bot ramming and the strike drone in models/bot.odin/drone.odin, via
+// level.odin's level_meteor_impact). dt=1 makes damage_mult*CELL_DAMAGE_RATE
+// equal exactly `damage`.
+meteor_hit_impact :: proc(meteor: ^Meteor, from, to: [2]f32, damage: f32) -> (impact: [2]f32, yield: f32, fragments: [dynamic]Meteor, destroyed: bool, hit: bool) {
+    return meteor_hit(meteor, from, to, damage / CELL_DAMAGE_RATE, 1)
+}
+
 // Kicks a just-split piece outward from where the whole rock used to be
 // centered, and nudges its spin away from the original — without this, a
 // freshly split-off piece has the exact same position and spin as before
@@ -453,6 +491,7 @@ meteor_check_split :: proc(meteor: ^Meteor) -> (fragments: [dynamic]Meteor, dest
     delete(meteor.cells)
     meteor.cells = kept_cells
     meteor.position = meteor_compute_centroid(meteor^)
+    meteor.avoid_radius = meteor_compute_radius(meteor^)
     meteor_apply_split_kick(meteor, origin)
 
     for cells in fragment_cell_lists {
@@ -462,6 +501,7 @@ meteor_check_split :: proc(meteor: ^Meteor) -> (fragments: [dynamic]Meteor, dest
             material = meteor.material,
         }
         fragment.position = meteor_compute_centroid(fragment)
+        fragment.avoid_radius = meteor_compute_radius(fragment)
         meteor_apply_split_kick(&fragment, origin)
         append(&fragments, fragment)
     }

@@ -30,8 +30,17 @@ poi_update :: proc(poi: ^Poi, ship: ^Ship, dt: f32) {
     }
 }
 
+// Extract's own accent — Shop/Heal are plain white until the ship is in
+// range, but an extraction gate is rare (EXTRACT_POI_NUMBER) and important
+// enough that it should read as a landmark from a distance instead of
+// blending into every other white polygon in the field.
+EXTRACT_COLOR :: rl.Color { 255, 195, 60, 220 }
+
 poi_render :: proc(poi: ^Poi) {
     color := poi.active ? ACTIVE_COLOR : rl.RAYWHITE
+    if poi.type == PoiType.Extract && !poi.active {
+        color = EXTRACT_COLOR
+    }
     switch poi.type {
         case PoiType.Shop:
             rl.DrawPolyLinesEx(poi.position, 6, POI_RADIUS, 0, 3, color)
@@ -56,5 +65,10 @@ poi_render :: proc(poi: ^Poi) {
                 5, 5, color
             )
         case PoiType.Extract:
+            // A slowly spinning gate, distinct from Shop's static hexagon and
+            // Heal's cross, to read as a portal rather than a building.
+            spin := f32(rl.GetTime()) * 40
+            rl.DrawPolyLinesEx(poi.position, 8, POI_RADIUS, spin, 3, color)
+            rl.DrawPolyLinesEx(poi.position, 3, POI_RADIUS * 0.5, -spin * 1.5, 3, color)
     }
 }

@@ -30,7 +30,9 @@ hud_init :: proc(hud: ^Hud, width, height: i32) {
 }
 
 hud_render :: proc(hud: Hud, level: ^Level) {
-    if level.shop_open {
+    if level.extract_open {
+        extract_render(hud, level)
+    } else if level.shop_open {
         shop_render(hud, level)
     } else if level.display_map {
         level_render_map(hud, level^)
@@ -58,6 +60,7 @@ hud_render_bar :: proc(hud: Hud, level: Level) {
     minimap_origin := [2]f32 { hud.width - HUD_PADDING - minimap_size, bar_y + HUD_PADDING }
     hud_draw_divider(bar_y, minimap_origin.x - HUD_SECTION_GAP)
     level_render_minimap(hud, level, minimap_origin, minimap_size)
+    extract_render_compass(hud, level, minimap_origin, minimap_size)
 }
 
 hud_draw_divider :: proc(bar_y, x: f32) {
@@ -72,6 +75,7 @@ hud_render_bar_stats :: proc(hud: Hud, level: Level, start_x, bar_y: f32) -> f32
     x := start_x
     gap : f32 = HUD_SECTION_GAP * 0.7
 
+    x += hud_draw_stat(hud, x, bar_y, "MAP", fmt.ctprintf("%d", level.map_tier)) + gap
     x += hud_draw_stat(hud, x, bar_y, "SECTOR", fmt.ctprintf("%d", level.last_player_chunk)) + gap
     x += hud_draw_stat(hud, x, bar_y, "SPEED", fmt.ctprintf("%.0f px/s", utils.norm_vec2(level.ship.speed))) + gap
 

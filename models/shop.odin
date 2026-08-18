@@ -21,6 +21,8 @@ TURRET_MAX_LEVEL    :: 5
 GOLD_CARD_BASE_COST :: 10
 GOLD_CARD_COST_STEP :: 6
 
+PURCHASABLE_TURRETS := [3]enums.TurretType { enums.TurretType.Saw, enums.TurretType.Gun, enums.TurretType.Strike }
+
 // Docking on a Shop poi (models/poi.odin) freezes the sim exactly like the
 // TAB map does (see level_update's pause flag) so the player can browse
 // without pressure. level.shop_dismissed keeps a Leave'd shop from
@@ -254,8 +256,8 @@ shop_render_turrets :: proc(hud: Hud, level: ^Level, bounds: rl.Rectangle, mouse
         button_bounds := rl.Rectangle {bounds.x, y, bounds.width, 38}
         if shop_button(hud, button_bounds, label_text, ship.stocks[enums.Materials.Gold] >= cost, mouse, clicked) {
             ship.stocks[enums.Materials.Gold] -= cost
-            level.card_offers[0] = enums.TurretType(rand.int_max(len(enums.TurretType)))
-            level.card_offers[1] = enums.TurretType(rand.int_max(len(enums.TurretType)))
+            level.card_offers[0] = PURCHASABLE_TURRETS[rand.int_max(len(PURCHASABLE_TURRETS))]
+            level.card_offers[1] = PURCHASABLE_TURRETS[rand.int_max(len(PURCHASABLE_TURRETS))]
             level.cards_pending = true
         }
     }

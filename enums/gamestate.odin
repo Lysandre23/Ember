@@ -2,5 +2,6 @@ package enums
 
 GameState :: enum {
     Menu,
-    Run
+    Run,
+    Death,
 }

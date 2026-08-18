@@ -149,6 +149,11 @@ bullets_update :: proc(level: ^Level, dt: f32) {
             break
         }
 
+        if !hit && level_point_in_any_meteor(level^, bullet.position) {
+            particle_spawn_burst(&level.particles, bullet.position, rl.Color {170, 170, 180, 255}, 2)
+            hit = true
+        }
+
         if hit || bullet.lifetime <= 0 {
             unordered_remove(&level.bullets, i)
         }

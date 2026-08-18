@@ -1,3 +1,5 @@
+#+feature dynamic-literals
+
 package models
 
 import "core:math/rand"
@@ -13,6 +15,10 @@ LASER_IMPACT_PARTICLE_COUNT :: 3
 LASER_IMPACT_PARTICLE_RELOAD :: 3
 BOT_HIT_RADIUS :: 18
 BOT_LASER_DPS :: 60
+// How close a bot's own body or a bot's bullet has to get to the ship's
+// position to register a hit (models/bot.odin's kamikaze ram and enemy
+// bullet collision).
+SHIP_HIT_RADIUS :: 20
 MINING_ALERT_GAIN :: 0.15
 
 FUEL_MAX_BASE :: 100
@@ -124,7 +130,33 @@ ship_render :: proc(ship: Ship) {
 }
 
 ship_handle_hit :: proc(ship: ^Ship, position: [2]f32, damage: f32) {
-    ship_take_damage(ship, 5)
+    ship_take_damage(ship, damage)
+}
+
+// Fresh ship at a random spot in the level — shared by game_init and
+// game_restart (models/game.odin) so both build the same starting loadout.
+ship_create :: proc() -> Ship {
+    return Ship {
+        position = [2]f32 {
+            LEVEL_WIDTH * (rand.float32() * 0.8 + 0.2),
+            LEVEL_HEIGHT * (rand.float32() * 0.8 + 0.2),
+        },
+        max_capacity = 100,
+        max_integrity = 100,
+        integrity = 100,
+        max_speed = SHIP_MAX_SPEED,
+        laser_damage_mult = 1,
+        fuel = FUEL_MAX_BASE,
+        max_fuel = FUEL_MAX_BASE,
+        laser_energy = LASER_ENERGY_MAX_BASE,
+        max_laser_energy = LASER_ENERGY_MAX_BASE,
+        stocks = map[enums.Materials]f32 {
+            enums.Materials.Iron = 0,
+            enums.Materials.Silver = 0,
+            enums.Materials.Gold = 0,
+            enums.Materials.Osmium = 0,
+        },
+    }
 }
 
 ship_take_damage :: proc(ship: ^Ship, damage: f32) {
