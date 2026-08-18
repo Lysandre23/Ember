@@ -9,6 +9,12 @@ import "../utils"
 
 BOT_SPEED :: 150
 
+EXPLOSION_PARTICLE_COUNT :: 16
+EXPLOSION_FLASH_COUNT    :: 6
+SHAKE_PER_KILL :: 2.2
+SHAKE_MAX      :: 10.0
+SHAKE_DECAY    :: 18.0 // per second
+
 Bot :: struct {
     dead: bool,
     type: enums.BotType,
@@ -33,6 +39,16 @@ bot_update :: proc(bot: ^Bot, ship: ^Ship, dt: f32) {
         ship_handle_hit(ship, bot.position, 3)
         bot.dead = true 
     }
+}
+
+// The single place a bot's death actually reads as an event, regardless of
+// what killed it (laser, saw, gun bullet, or ramming the ship itself) — see
+// the death branch of level_update's active_bots loop, the one spot every
+// kill path funnels through before the bot's slot is freed.
+bot_explode :: proc(level: ^Level, position: [2]f32, bot_type: enums.BotType) {
+    particle_spawn_burst(&level.particles, position, enums.bot_color(bot_type), EXPLOSION_PARTICLE_COUNT, 2, 0.5)
+    particle_spawn_burst(&level.particles, position, rl.RAYWHITE, EXPLOSION_FLASH_COUNT, 3, 0.5)
+    level.camera_shake = min(SHAKE_MAX, level.camera_shake + SHAKE_PER_KILL)
 }
 
 bot_render :: proc(bot: Bot, ship: Ship) {

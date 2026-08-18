@@ -5,7 +5,7 @@ import "core:math/rand"
 import rl "vendor:raylib"
 import "../enums"
 
-SHOP_POI_NUMBER :: 4
+SHOP_POI_NUMBER :: 6
 
 FUEL_COST_PER_UNIT   :: 0.15
 ENERGY_COST_PER_UNIT :: 0.15

@@ -52,6 +52,7 @@ Level :: struct {
     bot_spawn_timer   : f32,
     mining_alert      : f32,
     bullets           : [dynamic]Bullet,
+    camera_shake      : f32,
 
     // Shop (models/shop.odin): shop_open drives level.pause the same way
     // display_map does, and shop_dismissed keeps a Leave'd shop from
@@ -103,6 +104,7 @@ level_create :: proc(level: ^Level) {
 
     initial_chunk := get_chunk_index(level.ship.position.x, level.ship.position.y)
     level.last_player_chunk = initial_chunk
+    level.chunks[initial_chunk].visited = true
     populate_active_zone(level, initial_chunk)
 
     level_spawn_poi(level, HEAL_POI_NUMBER, PoiType.Heal)
@@ -153,6 +155,7 @@ level_update :: proc(level: ^Level, dt: f32) {
     level_update_shop_trigger(level)
 
     player_chunk := get_chunk_index(level.ship.position.x, level.ship.position.y)
+    level.chunks[player_chunk].visited = true
     if player_chunk != level.last_player_chunk {
         level.last_player_chunk = player_chunk
         populate_active_zone(level, player_chunk)
@@ -170,6 +173,7 @@ level_update :: proc(level: ^Level, dt: f32) {
         bot_update(bot, &level.ship, dt)
 
         if bot.dead {
+            bot_explode(level, bot.position, bot.type)
             remove_id_from_slice(&level.chunks[old_chunk].bots, id)
             pool_remove(&level.bots, id)
             unordered_remove(&level.active_bots, i)
@@ -190,6 +194,15 @@ level_update :: proc(level: ^Level, dt: f32) {
     target := level.ship.position
     t := 1 - math.exp(-CAMERA_LERP_SPEED * dt)
     level.camera.target = utils.vec2_lerp(level.camera.target, target, t)
+
+    // Trauma-style shake: bot_explode adds a small amount per kill (capped
+    // at SHAKE_MAX so a big simultaneous cluster of kills doesn't spike into
+    // an earthquake) and it bleeds off every frame, so a single kill barely
+    // registers but a dense swarm dying together reads as a real impact.
+    level.camera_shake = max(0, level.camera_shake - SHAKE_DECAY * dt)
+    base_offset := [2]f32 {f32(rl.GetScreenWidth()) / 2, (f32(rl.GetScreenHeight()) - HUD_BAR_HEIGHT) / 2}
+    shake_jitter := [2]f32 {rand.float32() * 2 - 1, rand.float32() * 2 - 1} * level.camera_shake
+    level.camera.offset = base_offset + shake_jitter
 }
 
 level_render :: proc(level: ^Level) {
@@ -311,6 +324,24 @@ level_render_map :: proc(hud: Hud, level: Level) {
     nb_chunks: i32 = LEVEL_WIDTH / CHUNK_SIZE
     cell_width: i32 = height / nb_chunks
     cell_height: i32 = height / nb_chunks
+
+    visited_color := rl.Color { 60, 130, 110, 70 }
+    for row in 0..<GRID_HEIGHT {
+        for col in 0..<GRID_WIDTH {
+            if !level.chunks[row * GRID_WIDTH + col].visited {
+                continue
+            }
+            rl.DrawRectangleRec(
+                rl.Rectangle {
+                    origin.x + f32(col * int(cell_width)),
+                    origin.y + f32(row * int(cell_height)),
+                    f32(cell_width), f32(cell_height)
+                },
+                visited_color
+            )
+        }
+    }
+
     for i in 0..<GRID_WIDTH {
         rl.DrawLine(
             i32(origin.x),
@@ -381,6 +412,20 @@ level_render_minimap :: proc(hud: Hud, level: Level, origin: [2]f32, size: f32) 
 
     nb_chunks: i32 = LEVEL_WIDTH / CHUNK_SIZE
     cell := size / f32(nb_chunks)
+
+    visited_color := rl.Color { 60, 130, 110, 90 }
+    for row in 0..<GRID_HEIGHT {
+        for col in 0..<GRID_WIDTH {
+            if !level.chunks[row * GRID_WIDTH + col].visited {
+                continue
+            }
+            rl.DrawRectangleRec(
+                rl.Rectangle { origin.x + f32(col) * cell, origin.y + f32(row) * cell, cell, cell },
+                visited_color
+            )
+        }
+    }
+
     grid_color := rl.Color { 255, 255, 255, 20 }
     for i in 1..<int(nb_chunks) {
         offset := f32(i) * cell

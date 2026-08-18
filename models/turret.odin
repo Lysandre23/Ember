@@ -6,16 +6,23 @@ import "core:math/rand"
 import "../enums"
 import "../utils"
 
-SAW_ORBIT_RADIUS  :: 55
-SAW_ORBIT_SPEED   :: 3.2
-SAW_HIT_RADIUS    :: 24
-SAW_VISUAL_RADIUS :: 9
+SAW_ORBIT_RADIUS    :: 55
+SAW_ORBIT_SPEED     :: 3.2
+SAW_HIT_RADIUS      :: 24
+SAW_VISUAL_RADIUS   :: 9
+SAW_TRAIL_SEGMENTS  :: 10
+SAW_TRAIL_ARC       :: 1.1 // radians of comet tail behind each blade
+SAW_TRAIL_THICKNESS :: 7
+SAW_SPARK_CHANCE    :: 0.35
 
-GUN_FIRE_INTERVAL   :: 0.16
+// A minigun, not a rifle: very fast/weak pulses instead of a few heavy hits
+// — GUN_BASE_DAMAGE is intentionally low, the fire rate is where the power
+// (and the show) comes from.
+GUN_FIRE_INTERVAL   :: 0.05
 GUN_RANGE           :: 550
 GUN_BULLET_SPEED    :: 620
-GUN_BASE_DAMAGE     :: 8
-GUN_DAMAGE_STEP     :: 6
+GUN_BASE_DAMAGE     :: 3
+GUN_DAMAGE_STEP     :: 2
 GUN_SPREAD          :: 0.7 // radians of total cone — wide on purpose, see enums/turret.odin
 GUN_BULLET_LIFETIME :: 0.9
 BULLET_HIT_RADIUS   :: 10
@@ -48,13 +55,19 @@ saw_update :: proc(level: ^Level, dt: f32) {
     for i in 0..<count {
         saw_pos := saw_position(ship^, i, count)
 
+        if rand.float32() < SAW_SPARK_CHANCE {
+            particle_spawn_burst(&level.particles, saw_pos, rl.Color {255, 235, 190, 255}, 1, 1, 0.3)
+        }
+
         for id in level.active_bots {
             bot := &level.bots.items[id]
             if bot.dead || utils.vec2_dist(bot.position, saw_pos) >= SAW_HIT_RADIUS {
                 continue
             }
+            // No spark burst here — bot_explode (level.odin's active_bots
+            // death branch) already gives every kill, saws included, a big
+            // explosion the instant it's flagged dead.
             bot.dead = true
-            particle_spawn_burst(&level.particles, bot.position, enums.bot_color(bot.type), LASER_IMPACT_PARTICLE_COUNT)
         }
     }
 }
@@ -95,6 +108,8 @@ gun_update :: proc(level: ^Level, dt: f32) {
         damage   = GUN_BASE_DAMAGE + f32(gun_level - 1) * GUN_DAMAGE_STEP,
         lifetime = GUN_BULLET_LIFETIME,
     })
+
+    particle_spawn_burst(&level.particles, ship.position, enums.turret_color(enums.TurretType.Gun), 2, 2, 0.5)
 }
 
 gun_find_target :: proc(level: Level) -> (position: [2]f32, found: bool) {
@@ -141,14 +156,41 @@ bullets_update :: proc(level: ^Level, dt: f32) {
 }
 
 turrets_render :: proc(level: Level) {
-    count := level.ship.turret_levels[enums.TurretType.Saw]
+    ship := level.ship
+    count := ship.turret_levels[enums.TurretType.Saw]
+    saw_color := enums.turret_color(enums.TurretType.Saw)
+
     for i in 0..<count {
-        saw_pos := saw_position(level.ship, i, count)
-        rl.DrawPolyLinesEx(saw_pos, 8, SAW_VISUAL_RADIUS, level.ship.saw_phase * 180 / math.PI, 2, enums.turret_color(enums.TurretType.Saw))
+        angle := ship.saw_phase + f32(i) * (math.TAU / f32(count))
+
+        // Comet-tail trail: the motion is circular, so a straight streak
+        // would look wrong — instead draw several fading ring wedges
+        // following the same orbit, immediately behind the blade.
+        for s in 0..<SAW_TRAIL_SEGMENTS {
+            t0 := f32(s) / f32(SAW_TRAIL_SEGMENTS)
+            t1 := f32(s + 1) / f32(SAW_TRAIL_SEGMENTS)
+            fade := 1 - t0
+            trail_color := saw_color
+            trail_color.a = u8(fade * fade * 160)
+            rl.DrawRing(
+                ship.position,
+                SAW_ORBIT_RADIUS - SAW_TRAIL_THICKNESS / 2,
+                SAW_ORBIT_RADIUS + SAW_TRAIL_THICKNESS / 2,
+                (angle - SAW_TRAIL_ARC * t0) * 180 / math.PI,
+                (angle - SAW_TRAIL_ARC * t1) * 180 / math.PI,
+                6, trail_color
+            )
+        }
+
+        saw_pos := ship.position + [2]f32 {math.cos(angle), math.sin(angle)} * SAW_ORBIT_RADIUS
+        rl.DrawPolyLinesEx(saw_pos, 8, SAW_VISUAL_RADIUS, angle * 180 / math.PI, 3, saw_color)
+        rl.DrawCircleV(saw_pos, 3, rl.RAYWHITE)
     }
 
+    gun_color := enums.turret_color(enums.TurretType.Gun)
     for bullet in level.bullets {
-        tail := bullet.position - utils.vec2_normalize(bullet.velocity) * 8
-        rl.DrawLineEx(tail, bullet.position, 2, enums.turret_color(enums.TurretType.Gun))
+        tail := bullet.position - utils.vec2_normalize(bullet.velocity) * 16
+        rl.DrawLineEx(tail, bullet.position, 3, gun_color)
+        rl.DrawCircleV(bullet.position, 2.5, rl.RAYWHITE)
     }
 }

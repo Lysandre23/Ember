@@ -5,6 +5,7 @@ import "core:math"
 Chunk :: struct {
     meteors : [dynamic]int,
     bots    : [dynamic]int,
+    visited : bool,
 }
 
 Active_Chunks :: struct {
