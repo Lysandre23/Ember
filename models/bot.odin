@@ -12,7 +12,11 @@ BOT_SPEED :: 150
 EXPLOSION_PARTICLE_COUNT :: 16
 EXPLOSION_FLASH_COUNT    :: 6
 SHAKE_PER_KILL :: 2.2
-SHAKE_MAX      :: 10.0
+// Raised from 10 so a ship-meteor collision (ship.odin's
+// SHIP_METEOR_SHAKE, a single hit worth ~2/3 of this) reads as a distinctly
+// bigger event than routine bot-kill shake, instead of hitting the same
+// ceiling a dense kill cluster already would.
+SHAKE_MAX      :: 16.0
 SHAKE_DECAY    :: 18.0 // per second
 
 // Sniper bots hold a standoff range instead of closing in — SNIPER_SPEED is

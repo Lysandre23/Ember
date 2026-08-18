@@ -23,6 +23,12 @@ DRONE_TRAIL_SEGMENTS :: 6
 DRONE_VISUAL_LENGTH  :: 14
 DRONE_VISUAL_WIDTH   :: 6
 
+// MomentumCells boost (enums.BoostType): every drone hit trickles a little
+// fuel back — meant to combo with StarvedEdge (ship.odin), which scales
+// laser damage off the fuel gauge, so investing in strike drones can
+// directly sustain laser output instead of the two being unrelated systems.
+DRONE_FUEL_GAIN :: 3
+
 // A bot has to be within this distance of the ship (not of the drone) to be
 // engaged at all, so a drone chasing a bot never chains itself out past
 // what's roughly visible on screen.
@@ -88,6 +94,9 @@ drone_update_one :: proc(drone: ^Drone, level: ^Level, index, count: int, claime
             particle_spawn_burst(&level.particles, bot.position, enums.turret_color(enums.TurretType.Strike), 6, 2, 0.5)
             if bot.health <= 0 {
                 bot.dead = true
+            }
+            if enums.BoostType.MomentumCells in ship.boosts {
+                ship.fuel = min(ship.max_fuel, ship.fuel + DRONE_FUEL_GAIN)
             }
         } else {
             dir := to_target / dist

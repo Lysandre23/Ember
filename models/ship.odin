@@ -56,15 +56,30 @@ Ship :: struct {
     speed_level, damage_level, capacity_level: int,
 
     // Consumables, refilled at a shop with Iron. Thrusting/lasering drains
-    // them; hitting zero cuts off the corresponding action.
+    // them; hitting zero cuts off the corresponding action. Once a gauge is
+    // full, Iron can't raise its ceiling any further — fuel_expand_level/
+    // energy_expand_level track how many times Osmium has raised max_fuel/
+    // max_laser_energy instead (models/shop.odin's shop_consumable_row),
+    // capped at OSMIUM_EXPAND_MAX_LEVEL.
     fuel, max_fuel: f32,
     laser_energy, max_laser_energy: f32,
+    fuel_expand_level, energy_expand_level: int,
 
     // Turret loadout bought with Gold at a shop (models/shop.odin,
     // models/turret.odin). 0 = not owned; N = owned at level N.
     turret_levels: [enums.TurretType]int,
     saw_phase: f32,
     gun_reload: f32,
+
+    // Unique perks bought with Osmium (models/shop.odin's shop_render_boosts,
+    // enums/boost.odin). Each is a one-time pickup, not a level — a bit_set
+    // is exactly "which of these am I holding".
+    boosts: bit_set[enums.BoostType],
+    // Cooldown after a meteor collision (ship_resolve_meteor_collision,
+    // below) before another one can register — otherwise a ship sitting
+    // wedged against a rock would take damage/knockback every single frame
+    // the segment still overlaps it.
+    meteor_impact_cooldown: f32,
 }
 
 ship_update :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, new_meteors: ^[dynamic]Meteor, destroyed_meteor_ids: ^[dynamic]int, bots: []Bot, active_bot_ids: []int, impact_particles: ^[dynamic]Particle, mining_alert: ^f32, camera: rl.Camera2D, dt: f32) {
@@ -82,7 +97,7 @@ ship_update :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, ne
     mouse := rl.GetScreenToWorld2D(rl.GetMousePosition(), camera)
     mouse_vector := [2]f32 {mouse.x - ship.position.x, mouse.y - ship.position.y}
     ship.direction = math.atan2_f32(mouse_vector.y, mouse_vector.x)
-    ship.speed = utils.vec2_clamp_length(ship.speed, ship.max_speed)
+    ship.speed = utils.vec2_clamp_length(ship.speed, ship_effective_max_speed(ship^))
     ship.position += ship.speed * dt
     if ship.position.x < 0 || ship.position.x > LEVEL_WIDTH {
         ship.position.x = clamp(ship.position.x, 0, LEVEL_WIDTH)
@@ -131,6 +146,86 @@ ship_render :: proc(ship: Ship) {
 
 ship_handle_hit :: proc(ship: ^Ship, position: [2]f32, damage: f32) {
     ship_take_damage(ship, damage)
+}
+
+// AdrenalineRush boost (enums.BoostType): up to +40% max speed as hull
+// integrity approaches 0 — a risk/reward "berserker" curve rather than a
+// flat bonus, so it's a live tradeoff against every other survivability
+// choice instead of a strict upgrade.
+ADRENALINE_MAX_BONUS :: 0.4
+
+ship_effective_max_speed :: proc(ship: Ship) -> f32 {
+    speed := ship.max_speed
+    if enums.BoostType.AdrenalineRush in ship.boosts {
+        integrity_ratio := ship.max_integrity > 0 ? ship.integrity / ship.max_integrity : 0
+        speed *= 1 + ADRENALINE_MAX_BONUS * (1 - integrity_ratio)
+    }
+    return speed
+}
+
+// StarvedEdge boost: laser damage scales with the fuel gauge instead of
+// being flat — 50% at empty up to 200% at full — so it directly rewards
+// whatever keeps fuel topped up (including MomentumCells' drone-hit
+// refuels), and punishes just sitting still lasering a rock dry.
+STARVED_EDGE_MIN_MULT :: 0.5
+STARVED_EDGE_MAX_MULT :: 2.0
+
+ship_effective_laser_mult :: proc(ship: Ship) -> f32 {
+    mult := ship.laser_damage_mult
+    if enums.BoostType.StarvedEdge in ship.boosts {
+        fuel_ratio := ship.max_fuel > 0 ? clamp(ship.fuel / ship.max_fuel, 0, 1) : 0
+        mult *= STARVED_EDGE_MIN_MULT + (STARVED_EDGE_MAX_MULT - STARVED_EDGE_MIN_MULT) * fuel_ratio
+    }
+    return mult
+}
+
+// A ship's hull hitting a meteor, as opposed to the ship's laser mining one
+// (laser_hit_meteor below) or a bot ramming one (models/bot.odin) — the
+// third and last thing that damages meteors via level_meteor_impact
+// (level.odin), and unlike those two it also hurts the ship back hard. Self
+// damage and the damage dealt TO the meteor are separate knobs specifically
+// so ReinforcedHull and ProspectorsMomentum can be tuned/combo'd
+// independently: fearless ramming (no self damage) is what makes aggressive
+// mining (much higher meteor damage) actually viable as a playstyle instead
+// of a way to slowly kill yourself.
+SHIP_METEOR_SELF_DAMAGE      :: 30
+SHIP_METEOR_MINE_DAMAGE      :: 14
+SHIP_METEOR_MINE_DAMAGE_BOOSTED :: 70
+SHIP_METEOR_IMPACT_COOLDOWN  :: 0.6
+SHIP_METEOR_KNOCKBACK        :: 260
+SHIP_METEOR_SHAKE            :: 10.0
+
+ship_resolve_meteor_collision :: proc(level: ^Level, prev, new: [2]f32, dt: f32) {
+    ship := &level.ship
+    if ship.meteor_impact_cooldown > 0 {
+        ship.meteor_impact_cooldown -= dt
+        return
+    }
+
+    mine_damage := f32(SHIP_METEOR_MINE_DAMAGE)
+    if enums.BoostType.ProspectorsMomentum in ship.boosts {
+        mine_damage = SHIP_METEOR_MINE_DAMAGE_BOOSTED
+    }
+
+    impact, material, hit := level_meteor_impact(level, prev, new, mine_damage)
+    if !hit {
+        return
+    }
+
+    ship.meteor_impact_cooldown = SHIP_METEOR_IMPACT_COOLDOWN
+    particle_spawn_burst(&level.particles, impact, enums.material_color(material), 16, 3, 0.8)
+
+    if enums.BoostType.ReinforcedHull not_in ship.boosts {
+        ship_take_damage(ship, SHIP_METEOR_SELF_DAMAGE)
+
+        away := utils.vec2_normalize(prev - new)
+        if away == ([2]f32 {0, 0}) {
+            away = utils.vec2_normalize(prev - impact)
+        }
+        ship.speed = away * SHIP_METEOR_KNOCKBACK
+    }
+
+    level.camera_shake = min(SHAKE_MAX, level.camera_shake + SHIP_METEOR_SHAKE)
 }
 
 // Fresh ship at a random spot in the level — shared by game_init and
@@ -254,7 +349,7 @@ laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []in
         // duplicating this logic. Everything below is ship-specific: where
         // the beam visually stops, whose stockpile grows, and handing the
         // split/destroy result off to level_update for pool bookkeeping.
-        impact, yield, fragments, destroyed, hit := meteor_hit(meteor, ship.position, ship.laser_target, ship.laser_damage_mult, dt)
+        impact, yield, fragments, destroyed, hit := meteor_hit(meteor, ship.position, ship.laser_target, ship_effective_laser_mult(ship^), dt)
         if !hit {
             continue
         }
@@ -293,7 +388,7 @@ laser_hit_bots :: proc(ship: ^Ship, bots: []Bot, active_bot_ids: []int, impact_p
             continue
         }
 
-        bot.health -= BOT_LASER_DPS * ship.laser_damage_mult * dt
+        bot.health -= BOT_LASER_DPS * ship_effective_laser_mult(ship^) * dt
 
         if ship.laser_impact_reload == 0 {
             particle_spawn_burst(impact_particles, bot.position, enums.bot_color(bot.type), LASER_IMPACT_PARTICLE_COUNT)

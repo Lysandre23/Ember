@@ -7,13 +7,22 @@ import "core:fmt"
 import "core:math/rand"
 import rl "vendor:raylib"
 
-METEOR_IN_LEVEL       :: 700
-CAMERA_LERP_SPEED     :: 5.0
-CHUNK_SIZE            :: 1000.0
+// CHUNK_SIZE*GRID_WIDTH must equal LEVEL_WIDTH (and the height equivalents) —
+// get_chunk_index and level_render_map's nb_chunks both assume the grid
+// tiles the level exactly. Bumped from 1000/10000 so a 3x3 active-chunk
+// neighborhood alone already covers a big/high-res monitor's viewport
+// (see chunk.odin's compute_active_radius, which also scales the
+// neighborhood radius itself for anything bigger still).
+CHUNK_SIZE            :: 2500.0
 GRID_WIDTH            :: 10
 GRID_HEIGHT           :: 10
-LEVEL_WIDTH           :: 10000
-LEVEL_HEIGHT          :: 10000
+LEVEL_WIDTH           :: 25000
+LEVEL_HEIGHT          :: 25000
+// Scaled up ~6x alongside the level area (25000^2 / 10000^2) to hold the
+// same meteor density the map was tuned at, rather than the same map
+// suddenly reading as empty.
+METEOR_IN_LEVEL       :: 4200
+CAMERA_LERP_SPEED     :: 5.0
 HEAL_POI_NUMBER       :: 6
 MIN_RANGE_BETWEEN_POI :: 3000
 
@@ -52,6 +61,11 @@ Level :: struct {
     camera            : rl.Camera2D,
     ship              : Ship,
     last_player_chunk : int,
+    // How many chunks out from last_player_chunk are simulated/rendered —
+    // computed once per map from the actual screen size (chunk.odin's
+    // compute_active_radius) so meteors near the edge of a big/high-res
+    // monitor's viewport don't fall outside the active zone.
+    active_radius     : int,
     meteors           : Pool(Meteor),
     bots              : Pool(Bot),
     chunks            : [100]Chunk,
@@ -86,6 +100,11 @@ Level :: struct {
     cards_pending  : bool,
     card_offers    : [2]enums.TurretType,
 
+    // Osmium boost draws (models/shop.odin's shop_render_boosts) — same
+    // pending/offers pattern as the turret gold cards above.
+    boost_cards_pending : bool,
+    boost_card_offers   : [2]enums.BoostType,
+
     // Extraction (models/extract.odin): same open/dismissed pattern as the
     // shop, so docking on the beacon offers a choice instead of instantly
     // warping the ship.
@@ -94,6 +113,8 @@ Level :: struct {
 }
 
 level_create :: proc(level: ^Level) {
+    level.active_radius = compute_active_radius()
+
     level.camera = rl.Camera2D {
         target   = level.ship.position,
         offset   = { f32(rl.GetScreenWidth()) / 2, (f32(rl.GetScreenHeight()) - HUD_BAR_HEIGHT) / 2 },
@@ -205,7 +226,9 @@ level_update :: proc(level: ^Level, dt: f32) {
     defer delete(new_meteors)
     defer delete(destroyed_meteor_ids)
 
+    prev_ship_position := level.ship.position
     ship_update(&level.ship, level.meteors.items[:], level.active_meteors[:], &new_meteors, &destroyed_meteor_ids, level.bots.items[:], level.active_bots[:], &level.particles, &level.mining_alert, level.camera, dt)
+    ship_resolve_meteor_collision(level, prev_ship_position, level.ship.position, dt)
     particle_update(&level.particles, dt)
 
     level.time_survived += dt
@@ -216,10 +239,19 @@ level_update :: proc(level: ^Level, dt: f32) {
     enemy_bullets_update(level, dt)
 
     for id in destroyed_meteor_ids {
+        // ship_resolve_meteor_collision (called just above, right after
+        // ship_update) can independently destroy a meteor the laser also
+        // just finished off this same frame — level_meteor_impact already
+        // ran the full meteor_destroy/chunk-removal/pool_remove for it in
+        // that case, so remove_id_from_slice here returns false and this id
+        // must NOT be pool_remove'd a second time (that would push the same
+        // free index onto free_indices twice, corrupting the pool).
+        if !remove_id_from_slice(&level.active_meteors, id) {
+            continue
+        }
         old_chunk := get_chunk_index(level.meteors.items[id].position.x, level.meteors.items[id].position.y)
         meteor_destroy(&level.meteors.items[id])
         remove_id_from_slice(&level.chunks[old_chunk].meteors, id)
-        remove_id_from_slice(&level.active_meteors, id)
         pool_remove(&level.meteors, id)
     }
 

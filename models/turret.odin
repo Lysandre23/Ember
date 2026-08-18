@@ -14,6 +14,11 @@ SAW_TRAIL_SEGMENTS  :: 10
 SAW_TRAIL_ARC       :: 1.1 // radians of comet tail behind each blade
 SAW_TRAIL_THICKNESS :: 7
 SAW_SPARK_CHANCE    :: 0.35
+// VampiricSaw boost (enums.BoostType): a small hull sliver back per saw
+// kill — the saw's kill rate scales with blade count (more blades, more
+// coverage of the ring), so this rewards a saw-heavy build with sustain
+// instead of just more melee damage.
+SAW_VAMPIRIC_HEAL   :: 1.5
 
 // A minigun, not a rifle: very fast/weak pulses instead of a few heavy hits
 // — GUN_BASE_DAMAGE is intentionally low, the fire rate is where the power
@@ -26,6 +31,14 @@ GUN_DAMAGE_STEP     :: 2
 GUN_SPREAD          :: 0.7 // radians of total cone — wide on purpose, see enums/turret.odin
 GUN_BULLET_LIFETIME :: 0.9
 BULLET_HIT_RADIUS   :: 10
+
+// ChainReaction boost (enums.BoostType): a minigun kill bursts, damaging
+// (and potentially killing, chaining into more bursts) anything else nearby
+// — pairs naturally with the density a swarm/mining-alert wave already
+// creates, and with Chain Reaction it can genuinely cascade through a
+// cluster of bots for one bullet's worth of ammo.
+CHAIN_REACTION_RADIUS :: 55
+CHAIN_REACTION_DAMAGE :: 12
 
 Bullet :: struct {
     position, velocity: [2]f32,
@@ -68,6 +81,9 @@ saw_update :: proc(level: ^Level, dt: f32) {
             // death branch) already gives every kill, saws included, a big
             // explosion the instant it's flagged dead.
             bot.dead = true
+            if enums.BoostType.VampiricSaw in ship.boosts {
+                ship.integrity = min(ship.max_integrity, ship.integrity + SAW_VAMPIRIC_HEAL)
+            }
         }
     }
 }
@@ -112,6 +128,25 @@ gun_update :: proc(level: ^Level, dt: f32) {
     particle_spawn_burst(&level.particles, ship.position, enums.turret_color(enums.TurretType.Gun), 2, 2, 0.5)
 }
 
+// Recursive on purpose — a bot this burst kills triggers its own burst, so a
+// dense cluster (a mining-alert swarm, say) can genuinely cascade through
+// multiple bots off one bullet. Bounded naturally: dead bots are skipped, so
+// each recursion strictly shrinks the pool of bots left to chain into —
+// there's no way to trigger the same bot twice.
+chain_reaction_burst :: proc(level: ^Level, position: [2]f32) {
+    for id in level.active_bots {
+        other := &level.bots.items[id]
+        if other.dead || utils.vec2_dist(other.position, position) >= CHAIN_REACTION_RADIUS {
+            continue
+        }
+        other.health -= CHAIN_REACTION_DAMAGE
+        if other.health <= 0 {
+            other.dead = true
+            chain_reaction_burst(level, other.position)
+        }
+    }
+}
+
 gun_find_target :: proc(level: Level) -> (position: [2]f32, found: bool) {
     closest_dist: f32 = GUN_RANGE
     for id in level.active_bots {
@@ -143,6 +178,9 @@ bullets_update :: proc(level: ^Level, dt: f32) {
             bot.health -= bullet.damage
             if bot.health <= 0 {
                 bot.dead = true
+                if enums.BoostType.ChainReaction in level.ship.boosts {
+                    chain_reaction_burst(level, bot.position)
+                }
             }
             particle_spawn_burst(&level.particles, bullet.position, enums.turret_color(enums.TurretType.Gun), 2)
             hit = true
