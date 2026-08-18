@@ -296,7 +296,7 @@ meteor_kill_cell :: proc(meteor: ^Meteor, index: int) {
 // killed the cell — checks whether the meteor split or was fully consumed.
 // Returns hit == false, with every other value zeroed, if the segment never
 // crosses any alive cell's boundary.
-meteor_hit :: proc(meteor: ^Meteor, from, to: [2]f32, dt: f32) -> (impact: [2]f32, yield: f32, fragments: [dynamic]Meteor, destroyed: bool, hit: bool) {
+meteor_hit :: proc(meteor: ^Meteor, from, to: [2]f32, damage_mult: f32, dt: f32) -> (impact: [2]f32, yield: f32, fragments: [dynamic]Meteor, destroyed: bool, hit: bool) {
     closest_cell := -1
     closest_dist: f32 = math.F32_MAX
 
@@ -327,7 +327,7 @@ meteor_hit :: proc(meteor: ^Meteor, from, to: [2]f32, dt: f32) -> (impact: [2]f3
     }
 
     cell := &meteor.cells[closest_cell]
-    damage := CELL_DAMAGE_RATE * dt
+    damage := CELL_DAMAGE_RATE * damage_mult * dt
     if damage > cell.hp {
         damage = cell.hp
     }

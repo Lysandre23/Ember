@@ -24,6 +24,16 @@ material_color :: proc(material: Materials) -> rl.Color {
     return rl.RAYWHITE
 }
 
+material_name :: proc(material: Materials) -> cstring {
+    switch material {
+        case Materials.Iron: return "Iron"
+        case Materials.Silver: return "Silver"
+        case Materials.Gold: return "Gold"
+        case Materials.Osmium: return "Osmium"
+    }
+    return ""
+}
+
 material_presence :: proc(material: Materials) -> int {
     switch material {
         case Materials.Iron: return 50
@@ -32,4 +42,14 @@ material_presence :: proc(material: Materials) -> int {
         case Materials.Osmium: return 5
     }
     return 0
+}
+
+// 0 (as common as Iron) to 1 (as scarce as Osmium) — derived from
+// material_presence rather than a second hand-tuned table, so rarity always
+// tracks whatever spawn weights are actually in play.
+material_rarity :: proc(material: Materials) -> f32 {
+    most_common := f32(material_presence(Materials.Iron))
+    rarest := f32(material_presence(Materials.Osmium))
+    presence := f32(material_presence(material))
+    return (most_common - presence) / (most_common - rarest)
 }

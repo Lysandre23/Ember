@@ -34,6 +34,8 @@ poi_render :: proc(poi: ^Poi) {
     color := poi.active ? ACTIVE_COLOR : rl.RAYWHITE
     switch poi.type {
         case PoiType.Shop:
+            rl.DrawPolyLinesEx(poi.position, 6, POI_RADIUS, 0, 3, color)
+            rl.DrawPolyLinesEx(poi.position, 4, POI_RADIUS / 2, 45, 3, color)
         case PoiType.Heal:
             rl.DrawPolyLinesEx(poi.position, 6, POI_RADIUS, 0, 3, color)
             heal_thick: f32 = 8

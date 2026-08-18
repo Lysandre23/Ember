@@ -11,6 +11,14 @@ SHIP_COLOR :: rl.Color { 255, 255, 255, 255 }
 MAX_RANGE :: 100
 LASER_IMPACT_PARTICLE_COUNT :: 3
 LASER_IMPACT_PARTICLE_RELOAD :: 3
+BOT_HIT_RADIUS :: 18
+BOT_LASER_DPS :: 60
+MINING_ALERT_GAIN :: 0.15
+
+FUEL_MAX_BASE :: 100
+LASER_ENERGY_MAX_BASE :: 100
+FUEL_THRUST_COST :: 3
+LASER_ENERGY_COST :: 2
 
 TRAIL_PARTICLE_COLOR :: rl.Color { 140, 200, 255, 220 }
 TRAIL_BURST_COUNT :: 5
@@ -33,14 +41,33 @@ Ship :: struct {
     laser_impact_reload: u8,
     laser_power, max_capacity, direction, integrity, max_integrity: f32,
     stocks: map[enums.Materials]f32,
+
+    // Shop-upgradeable stats. max_speed/laser_damage_mult/max_capacity start
+    // at the SHIP_*_BASE / MAX_RANGE-adjacent constants and are bumped
+    // directly on purchase (models/shop.odin); the *_level fields exist only
+    // to price the next purchase and cap it at UPGRADE_MAX_LEVEL.
+    max_speed, laser_damage_mult: f32,
+    speed_level, damage_level, capacity_level: int,
+
+    // Consumables, refilled at a shop with Iron. Thrusting/lasering drains
+    // them; hitting zero cuts off the corresponding action.
+    fuel, max_fuel: f32,
+    laser_energy, max_laser_energy: f32,
+
+    // Turret loadout bought with Gold at a shop (models/shop.odin,
+    // models/turret.odin). 0 = not owned; N = owned at level N.
+    turret_levels: [enums.TurretType]int,
+    saw_phase: f32,
+    gun_reload: f32,
 }
 
-ship_update :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, new_meteors: ^[dynamic]Meteor, destroyed_meteor_ids: ^[dynamic]int, impact_particles: ^[dynamic]Particle, camera: rl.Camera2D, dt: f32) {
+ship_update :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, new_meteors: ^[dynamic]Meteor, destroyed_meteor_ids: ^[dynamic]int, bots: []Bot, active_bot_ids: []int, impact_particles: ^[dynamic]Particle, mining_alert: ^f32, camera: rl.Camera2D, dt: f32) {
     acc: f32 = 200
 
-    if rl.IsKeyDown(.W) {
+    if rl.IsKeyDown(.W) && ship.fuel > 0 {
         ship.speed.x += math.cos(ship.direction) * acc * dt
         ship.speed.y += math.sin(ship.direction) * acc * dt
+        ship.fuel = max(0, ship.fuel - FUEL_THRUST_COST * dt)
         trail_particle_spawn(ship)
     }
     if rl.IsKeyDown(.S) {
@@ -49,7 +76,7 @@ ship_update :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, ne
     mouse := rl.GetScreenToWorld2D(rl.GetMousePosition(), camera)
     mouse_vector := [2]f32 {mouse.x - ship.position.x, mouse.y - ship.position.y}
     ship.direction = math.atan2_f32(mouse_vector.y, mouse_vector.x)
-    ship.speed = utils.vec2_clamp_length(ship.speed, SHIP_MAX_SPEED)
+    ship.speed = utils.vec2_clamp_length(ship.speed, ship.max_speed)
     ship.position += ship.speed * dt
     if ship.position.x < 0 || ship.position.x > LEVEL_WIDTH {
         ship.position.x = clamp(ship.position.x, 0, LEVEL_WIDTH)
@@ -62,16 +89,18 @@ ship_update :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, ne
     ship.vertices = ship_get_vertices(ship^)
     particle_update(&ship.trail_particles, dt)
 
-    if rl.IsMouseButtonDown(.LEFT) {
+    if rl.IsMouseButtonDown(.LEFT) && ship.laser_energy > 0 {
         ship.laser_on = true
+        ship.laser_energy = max(0, ship.laser_energy - LASER_ENERGY_COST * dt)
         if ship.laser_power < MAX_RANGE {
             ship.laser_power += 2
         }
-        ship.laser_target = ship.vertices[2] + [2]f32 { 
+        ship.laser_target = ship.vertices[2] + [2]f32 {
             math.cos(ship.direction) * ship.laser_power,
             math.sin(ship.direction) * ship.laser_power
         }
-        laser_hit_meteor(ship, meteors, active_meteor_ids, new_meteors, destroyed_meteor_ids, impact_particles, dt)
+        laser_hit_meteor(ship, meteors, active_meteor_ids, new_meteors, destroyed_meteor_ids, impact_particles, mining_alert, dt)
+        laser_hit_bots(ship, bots, active_bot_ids, impact_particles, dt)
     } else {
         ship.laser_on = false
         ship.laser_power = 0
@@ -103,6 +132,14 @@ ship_take_damage :: proc(ship: ^Ship, damage: f32) {
     if ship.integrity < 0 {
         ship.integrity = 0
     }
+}
+
+ship_cargo_total :: proc(ship: Ship) -> f32 {
+    total: f32 = 0
+    for _, amount in ship.stocks {
+        total += amount
+    }
+    return total
 }
 
 ship_get_vertices :: proc(ship: Ship) -> [3][2]f32 {
@@ -160,7 +197,7 @@ trail_particle_spawn :: proc(ship: ^Ship) {
     }
 }
 
-laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, new_meteors: ^[dynamic]Meteor, destroyed_meteor_ids: ^[dynamic]int, impact_particles: ^[dynamic]Particle, dt: f32) {
+laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []int, new_meteors: ^[dynamic]Meteor, destroyed_meteor_ids: ^[dynamic]int, impact_particles: ^[dynamic]Particle, mining_alert: ^f32, dt: f32) {
     if ship.laser_impact_reload > 0 {
         ship.laser_impact_reload -= 1
     }
@@ -185,13 +222,19 @@ laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []in
         // duplicating this logic. Everything below is ship-specific: where
         // the beam visually stops, whose stockpile grows, and handing the
         // split/destroy result off to level_update for pool bookkeeping.
-        impact, yield, fragments, destroyed, hit := meteor_hit(meteor, ship.position, ship.laser_target, dt)
+        impact, yield, fragments, destroyed, hit := meteor_hit(meteor, ship.position, ship.laser_target, ship.laser_damage_mult, dt)
         if !hit {
             continue
         }
 
         ship.laser_target = impact
-        ship.stocks[meteor.material] += yield
+        // A full cargo hold still lets the beam chew through the rock (and
+        // still feeds mining_alert below — parking on a rare meteor with a
+        // full hold is still what draws the swarm) but stops banking yield
+        // past max_capacity instead of silently exceeding it.
+        room := max(0, ship.max_capacity - ship_cargo_total(ship^))
+        ship.stocks[meteor.material] += min(yield, room)
+        mining_alert^ = clamp(mining_alert^ + yield * enums.material_rarity(meteor.material) * MINING_ALERT_GAIN, 0, 1)
 
         if ship.laser_impact_reload == 0 {
             particle_spawn_burst(impact_particles, impact, enums.material_color(meteor.material), LASER_IMPACT_PARTICLE_COUNT)
@@ -205,5 +248,28 @@ laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []in
             append(new_meteors, fragment)
         }
         delete(fragments)
+    }
+}
+
+laser_hit_bots :: proc(ship: ^Ship, bots: []Bot, active_bot_ids: []int, impact_particles: ^[dynamic]Particle, dt: f32) {
+    for id in active_bot_ids {
+        bot := &bots[id]
+        if bot.dead {
+            continue
+        }
+        if utils.vec2_point_segment_dist(bot.position, ship.position, ship.laser_target) >= BOT_HIT_RADIUS {
+            continue
+        }
+
+        bot.health -= BOT_LASER_DPS * ship.laser_damage_mult * dt
+
+        if ship.laser_impact_reload == 0 {
+            particle_spawn_burst(impact_particles, bot.position, enums.bot_color(bot.type), LASER_IMPACT_PARTICLE_COUNT)
+            ship.laser_impact_reload = LASER_IMPACT_PARTICLE_RELOAD
+        }
+
+        if bot.health <= 0 {
+            bot.dead = true
+        }
     }
 }

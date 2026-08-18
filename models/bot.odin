@@ -7,16 +7,20 @@ import "core:math/rand"
 import "../enums"
 import "../utils"
 
-BOT_SPEED :: 100
+BOT_SPEED :: 150
 
 Bot :: struct {
     dead: bool,
     type: enums.BotType,
     position: [2]f32,
-    direction: f32
+    direction: f32,
+    health: f32,
 }
 
 bot_update :: proc(bot: ^Bot, ship: ^Ship, dt: f32) {
+    if bot.dead {
+        return
+    }
     bot.direction = math.atan2(
         ship.position.y - bot.position.y,
         ship.position.x - bot.position.x,

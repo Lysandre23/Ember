@@ -110,3 +110,16 @@ segment_intersection :: proc(a1, a2, b1, b2: [2]f32) -> (point: [2]f32, ok: bool
     ok = true
     return
 }
+
+vec2_point_segment_dist :: proc(p, a, b: [2]f32) -> f32 {
+    ab := b - a
+    len_sq := ab.x * ab.x + ab.y * ab.y
+    if len_sq == 0 {
+        return vec2_dist(p, a)
+    }
+
+    t := ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / len_sq
+    t = clamp(t, 0, 1)
+    closest := a + ab * t
+    return vec2_dist(p, closest)
+}
