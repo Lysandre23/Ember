@@ -185,7 +185,7 @@ laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []in
         // duplicating this logic. Everything below is ship-specific: where
         // the beam visually stops, whose stockpile grows, and handing the
         // split/destroy result off to level_update for pool bookkeeping.
-        impact, yield, fragment, has_fragment, destroyed, hit := meteor_hit(meteor, ship.position, ship.laser_target, dt)
+        impact, yield, fragments, destroyed, hit := meteor_hit(meteor, ship.position, ship.laser_target, dt)
         if !hit {
             continue
         }
@@ -200,8 +200,10 @@ laser_hit_meteor :: proc(ship: ^Ship, meteors: []Meteor, active_meteor_ids: []in
 
         if destroyed {
             append(destroyed_meteor_ids, id)
-        } else if has_fragment {
+        }
+        for fragment in fragments {
             append(new_meteors, fragment)
         }
+        delete(fragments)
     }
 }

@@ -99,7 +99,7 @@ level_update :: proc(level: ^Level, dt: f32) {
 
     for id in destroyed_meteor_ids {
         old_chunk := get_chunk_index(level.meteors.items[id].position.x, level.meteors.items[id].position.y)
-        delete(level.meteors.items[id].vertices)
+        meteor_destroy(&level.meteors.items[id])
         remove_id_from_slice(&level.chunks[old_chunk].meteors, id)
         remove_id_from_slice(&level.active_meteors, id)
         pool_remove(&level.meteors, id)

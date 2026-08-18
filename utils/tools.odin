@@ -48,6 +48,46 @@ vec2_clamp_length :: proc(v: [2]f32, max_length: f32) -> [2]f32 {
     return v
 }
 
+// Sutherland-Hodgman clip against a single half-plane: points P where
+// dot(P - plane_point, inside_normal) >= 0 are kept. `clipped` reports
+// whether anything was actually cut away (some vertex was outside) — callers
+// building a Voronoi cell from repeated half-plane clips use that to detect
+// which other seed points actually border this one.
+clip_polygon_halfplane :: proc(poly: [][2]f32, plane_point, inside_normal: [2]f32) -> (result: [dynamic][2]f32, clipped: bool) {
+    n := len(poly)
+    if n == 0 {
+        return
+    }
+    result = make([dynamic][2]f32, 0, n + 1)
+
+    prev := poly[n - 1]
+    prev_d := (prev.x - plane_point.x) * inside_normal.x + (prev.y - plane_point.y) * inside_normal.y
+
+    for i in 0..<n {
+        curr := poly[i]
+        curr_d := (curr.x - plane_point.x) * inside_normal.x + (curr.y - plane_point.y) * inside_normal.y
+
+        if curr_d >= 0 {
+            if prev_d < 0 {
+                t := prev_d / (prev_d - curr_d)
+                append(&result, prev + (curr - prev) * t)
+            }
+            append(&result, curr)
+        } else {
+            clipped = true
+            if prev_d >= 0 {
+                t := prev_d / (prev_d - curr_d)
+                append(&result, prev + (curr - prev) * t)
+            }
+        }
+
+        prev = curr
+        prev_d = curr_d
+    }
+
+    return
+}
+
 segment_intersection :: proc(a1, a2, b1, b2: [2]f32) -> (point: [2]f32, ok: bool) {
     r := a2 - a1
     s := b2 - b1
